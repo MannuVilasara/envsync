@@ -4,7 +4,10 @@ Copyright © 2025 Manpreet Singh <mannuvilasara@gmail.com>
 package cmd
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 
@@ -73,6 +76,30 @@ with necessary configuration and cryptographic keys.`,
 			fmt.Printf("Created envsync.config.json with default tracked files.\n")
 		}
 
+		// Load project config to get the project ID
+		projectConfig, err := config.LoadProjectConfig(cwd)
+		if err != nil {
+			fmt.Printf("Error loading project config: %v\n", err)
+			return
+		}
+
+		// Load public key
+		publicKeyPath := filepath.Join(envsyncDir, "public.pem")
+		publicKeyData, err := os.ReadFile(publicKeyPath)
+		if err != nil {
+			fmt.Printf("Error reading public key: %v\n", err)
+			return
+		}
+
+		// Create project on server
+		err = createProjectOnServer(projectConfig.ServerURL, projectConfig.ProjectID, deviceConfig.DeviceID, string(publicKeyData))
+		if err != nil {
+			fmt.Printf("Warning: Failed to register project on server: %v\n", err)
+			fmt.Println("You can still use EnvSync locally, but sharing features may not work.")
+		} else {
+			fmt.Println("Project registered on server successfully.")
+		}
+
 		fmt.Println("EnvSync initialized successfully.")
 		fmt.Printf("Created .envsync directory with keys and config.\n")
 	},
@@ -90,4 +117,44 @@ func init() {
 	// Cobra supports local flags which will only run when this command
 	// is called directly, e.g.:
 	// initCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
+}
+
+// createProjectOnServer registers the project on the EnvSync server
+func createProjectOnServer(serverURL, projectID, deviceID, publicKey string) error {
+	reqBody := map[string]string{
+		"project_id":   projectID,
+		"device_id":    deviceID,
+		"public_key":   publicKey,
+		"project_name": "", // Optional, can be empty
+	}
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	url := serverURL + "/projects"
+	resp, err := http.Post(url, "application/json", bytes.NewBuffer(jsonData))
+	if err != nil {
+		return fmt.Errorf("failed to make request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("server returned status %d", resp.StatusCode)
+	}
+
+	var response struct {
+		Success bool   `json:"success"`
+		Message string `json:"message"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+		return fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	if !response.Success {
+		return fmt.Errorf("server error: %s", response.Message)
+	}
+
+	return nil
 }

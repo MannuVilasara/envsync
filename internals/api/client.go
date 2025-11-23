@@ -98,3 +98,34 @@ func PullEnv(serverURL, projectID, deviceID string) ([]PulledFile, error) {
 
 	return pullResp.Files, nil
 }
+
+// GetMasterKey fetches the encrypted master key for a project member
+func GetMasterKey(serverURL, projectID, deviceID string) (string, error) {
+	url := fmt.Sprintf("%s/projects/%s/master-key?device_id=%s", serverURL, projectID, deviceID)
+
+	resp, err := http.Get(url)
+	if err != nil {
+		return "", fmt.Errorf("error sending request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("server returned status %d", resp.StatusCode)
+	}
+
+	var response struct {
+		Success            bool   `json:"success"`
+		Message            string `json:"message"`
+		EncryptedMasterKey string `json:"encrypted_master_key"`
+	}
+	err = json.NewDecoder(resp.Body).Decode(&response)
+	if err != nil {
+		return "", fmt.Errorf("error decoding response: %w", err)
+	}
+
+	if !response.Success {
+		return "", fmt.Errorf("get master key failed: %s", response.Message)
+	}
+
+	return response.EncryptedMasterKey, nil
+}

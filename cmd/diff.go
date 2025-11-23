@@ -53,11 +53,17 @@ Shows added, removed, or modified environment variables.`,
 			return
 		}
 
-		// Load private key
-		privateKeyPath := filepath.Join(envsyncDir, "private.pem")
-		privateKey, err := crypto.LoadPrivateKey(privateKeyPath)
+		// Get project master key
+		masterKeyB64, err := api.GetMasterKey(projectConfig.ServerURL, projectConfig.ProjectID, deviceConfig.DeviceID)
 		if err != nil {
-			fmt.Printf("Error loading private key: %v\n", err)
+			fmt.Printf("Error getting master key: %v\n", err)
+			return
+		}
+
+		// Decode master key from base64
+		masterKey, err := base64.StdEncoding.DecodeString(masterKeyB64)
+		if err != nil {
+			fmt.Printf("Error decoding master key: %v\n", err)
 			return
 		}
 
@@ -78,17 +84,8 @@ Shows added, removed, or modified environment variables.`,
 				continue
 			}
 
-			encryptedKey, err := base64.StdEncoding.DecodeString(file.EncryptedKey)
-			if err != nil {
-				fmt.Printf("Error decoding encrypted key for %s: %v\n", file.FileName, err)
-				continue
-			}
-
-			aesKey, err := crypto.DecryptRSA(privateKey, encryptedKey)
-			if err != nil {
-				fmt.Printf("Error decrypting AES key for %s: %v\n", file.FileName, err)
-				continue
-			}
+			// Use master key directly to decrypt the data
+			aesKey := masterKey
 
 			data, err := crypto.DecryptAES(aesKey, encryptedData)
 			if err != nil {

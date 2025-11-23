@@ -52,11 +52,17 @@ The files are encrypted with AES-256-GCM, and the AES key is encrypted with RSA.
 			return
 		}
 
-		// Load public key
-		publicKeyPath := filepath.Join(envsyncDir, "public.pem")
-		publicKey, err := crypto.LoadPublicKey(publicKeyPath)
+		// Get project master key
+		masterKeyB64, err := api.GetMasterKey(projectConfig.ServerURL, projectConfig.ProjectID, deviceConfig.DeviceID)
 		if err != nil {
-			fmt.Printf("Error loading public key: %v\n", err)
+			fmt.Printf("Error getting master key: %v\n", err)
+			return
+		}
+
+		// Decode master key from base64
+		masterKey, err := base64.StdEncoding.DecodeString(masterKeyB64)
+		if err != nil {
+			fmt.Printf("Error decoding master key: %v\n", err)
 			return
 		}
 
@@ -75,36 +81,24 @@ The files are encrypted with AES-256-GCM, and the AES key is encrypted with RSA.
 				continue
 			}
 
-			// Generate AES key
-			aesKey, err := crypto.GenerateAESKey()
-			if err != nil {
-				fmt.Printf("Error generating AES key: %v\n", err)
-				continue
-			}
-
-			// Encrypt data with AES
-			encryptedData, err := crypto.EncryptAES(aesKey, data)
+			// Encrypt data with master key
+			encryptedData, err := crypto.EncryptAES(masterKey, data)
 			if err != nil {
 				fmt.Printf("Error encrypting data: %v\n", err)
 				continue
 			}
 
-			// Encrypt AES key with RSA
-			encryptedKey, err := crypto.EncryptRSA(publicKey, aesKey)
-			if err != nil {
-				fmt.Printf("Error encrypting AES key: %v\n", err)
-				continue
-			}
-
 			// Encode to base64 for JSON
 			encryptedDataB64 := base64.StdEncoding.EncodeToString(encryptedData)
-			encryptedKeyB64 := base64.StdEncoding.EncodeToString(encryptedKey)
+			// For master key encryption, we don't need an additional encrypted key
+			// The master key itself is already encrypted per user
+			encryptedKeyB64 := base64.StdEncoding.EncodeToString(masterKey)
 
 			// Push to server
 			pushReq := api.PushRequest{
 				DeviceID:      deviceConfig.DeviceID,
 				EncryptedData: encryptedDataB64,
-				EncryptedKey:  encryptedKeyB64,
+				EncryptedKey:  encryptedKeyB64, // This is actually the master key
 				FileName:      fileName,
 			}
 
